@@ -106,6 +106,8 @@ data class UiState(
     val isPlaying: Boolean = false,
     /** Output device Android actually routed playback to (verified after playback starts). */
     val playbackDevice: String = "",
+    /** video.mp4 shown in the preview box during playback; null = audio-only playback. */
+    val replayVideoPath: String? = null,
     val lastError: String? = null,
     val events: List<String> = emptyList(),
 )
@@ -133,6 +135,11 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
   private val sessionsRoot = File(filesRoot, "sessions")
   @Volatile private var unsavedDir: File? = null
   private var closingJob: Job? = null
+  /** Folder of the most recent capture (temporary or saved); its video.mp4 is used for playback. */
+  @Volatile private var lastCaptureDir: File? = null
+  // Phone-clock arrival time of the first video frame / audio chunk, to line up playback.
+  @Volatile private var firstVideoArrivalNs = 0L
+  @Volatile private var firstAudioArrivalNs = 0L
   private var statsJob: Job? = null
   private var monitoringStarted = false
   private val metadataJobs = mutableMapOf<DeviceIdentifier, Job>()
@@ -409,6 +416,7 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
   }
 
   private fun onVideoFrame(f: GlassesVideoFrame) {
+    if (firstVideoArrivalNs == 0L) firstVideoArrivalNs = f.arrivalElapsedNs
     videoCount++
     lastVideoArrivalNs = f.arrivalElapsedNs
     lastVideoPtsUs = f.presentationTimeUs
@@ -418,6 +426,7 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
   }
 
   private fun onAudioChunk(c: AudioChunk) {
+    if (firstAudioArrivalNs == 0L) firstAudioArrivalNs = c.arrivalElapsedNs
     audioStats.add(c)
     hub.publishAudio(c)
   }
@@ -508,6 +517,7 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
     recorder?.let { r ->
       hub.removeAudioProcessor(r)
       unsavedDir = r.dir
+      lastCaptureDir = r.dir
       // Finishing the MP4/WAV can take a moment; do it off the main thread.
       closingJob =
           viewModelScope.launch(Dispatchers.IO) {
@@ -538,6 +548,7 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
       val dest = File(sessionsRoot, src.name)
       if (src.renameTo(dest)) {
         unsavedDir = null
+        lastCaptureDir = dest
         log("Saved capture to ${dest.absolutePath}")
         _state.update { it.copy(isSaving = false, hasUnsavedCapture = false, savedDir = dest.absolutePath) }
       } else {
@@ -552,6 +563,7 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
     val dir = unsavedDir ?: return
     val job = closingJob
     unsavedDir = null
+    if (lastCaptureDir == dir) lastCaptureDir = null
     _state.update { it.copy(hasUnsavedCapture = false) }
     viewModelScope.launch(Dispatchers.IO) {
       job?.join()
@@ -559,13 +571,48 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
     }
   }
 
-  /** Plays the last capture's audio on the glasses' speakers (only when not capturing). */
+  /**
+   * Plays the last capture: video.mp4 in the preview box (on the phone) and the audio on the
+   * glasses' speakers. The screen shows the video first; when it is ready it calls
+   * [onReplayVideoStarted], which starts the audio lined up with it.
+   */
   fun playLastCapture() {
-    if (_state.value.capturing) return
+    if (_state.value.capturing || _state.value.isPlaying) return
     clearError()
-    val glassesName = _state.value.devices.firstOrNull { it.link == "CONNECTED" }?.name
     // Set before starting, so a very short playback can't finish before this flag is set.
-    _state.update { it.copy(playbackDevice = "", isPlaying = true) }
+    _state.update { it.copy(playbackDevice = "", isPlaying = true, replayVideoPath = null) }
+    viewModelScope.launch {
+      closingJob?.join() // the MP4 must be finished before it can be played
+      if (!_state.value.isPlaying) return@launch // Stop was tapped meanwhile
+      val video = lastCaptureDir?.let { File(it, "video.mp4") }?.takeIf { it.exists() && it.length() > 0 }
+      if (video != null) {
+        _state.update { it.copy(replayVideoPath = video.absolutePath) }
+      } else {
+        log("No video file for this capture (see events.log); playing audio only.")
+        startReplayAudio(offsetMs = 0)
+      }
+    }
+  }
+
+  /** Called by the screen when the video has started playing. */
+  fun onReplayVideoStarted() {
+    if (!_state.value.isPlaying) return
+    // Positive: the first audio arrived after the first video frame, so audio starts later.
+    val offsetMs =
+        if (firstVideoArrivalNs > 0 && firstAudioArrivalNs > 0) (firstAudioArrivalNs - firstVideoArrivalNs) / 1_000_000
+        else 0L
+    startReplayAudio(offsetMs)
+  }
+
+  /** Called by the screen if the video cannot be played; the audio still plays. */
+  fun onReplayVideoError(message: String) {
+    setError("Video playback failed ($message); playing audio only.")
+    _state.update { it.copy(replayVideoPath = null) }
+    startReplayAudio(offsetMs = 0)
+  }
+
+  private fun startReplayAudio(offsetMs: Long) {
+    val glassesName = _state.value.devices.firstOrNull { it.link == "CONNECTED" }?.name
     val error =
         replay.play(
             glassesName = glassesName,
@@ -574,19 +621,23 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
               _state.update { it.copy(playbackDevice = device) }
             },
             onError = { msg -> setError(msg) },
-            onFinished = { _state.update { it.copy(isPlaying = false) } },
+            onFinished = { _state.update { it.copy(isPlaying = false, replayVideoPath = null) } },
+            startOffsetMs = offsetMs,
         )
     if (error == null) {
-      log("Playing last capture on glasses: ${"%.1f".format(replay.seconds)} s, source = ${replay.origin?.label}")
+      log(
+          "Playing last capture: ${"%.1f".format(replay.seconds)} s, audio offset $offsetMs ms, " +
+              "source = ${replay.origin?.label}"
+      )
     } else {
-      _state.update { it.copy(isPlaying = false) }
+      _state.update { it.copy(isPlaying = false, replayVideoPath = null) }
       setError(error)
     }
   }
 
   fun stopPlayback() {
     replay.stopPlayback()
-    _state.update { it.copy(isPlaying = false) }
+    _state.update { it.copy(isPlaying = false, replayVideoPath = null) }
   }
 
   /** Writes a timestamped marker (e.g. at a hand clap) into the event log and recording. */
@@ -610,6 +661,8 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
     fpsWindowStartNs = 0
     fpsWindowCount = 0
     sdkAudioBytes = 0
+    firstVideoArrivalNs = 0
+    firstAudioArrivalNs = 0
     _preview.value = null
   }
 

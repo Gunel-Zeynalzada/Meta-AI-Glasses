@@ -32,6 +32,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import android.widget.VideoView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import az.ada.glassesav.capture.CaptureViewModel
 import az.ada.glassesav.capture.UiState
@@ -71,13 +73,13 @@ fun CaptureScreen(
           OutlinedButton(onClick = vm::addMarker, enabled = s.capturing) { Text("Marker") }
         }
 
-        // Listen to the last capture (kept in memory only; played on the glasses' speakers).
+        // Replay the last capture: video in the box below, audio on the glasses' speakers.
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
           if (s.isPlaying) {
             Button(onClick = vm::stopPlayback) { Text("Stop playback") }
           } else {
             Button(onClick = vm::playLastCapture, enabled = !s.capturing && s.replaySeconds > 0) {
-              Text("Play last capture on glasses (${fmt(s.replaySeconds)} s)")
+              Text("Play last capture (${fmt(s.replaySeconds)} s)")
             }
           }
         }
@@ -104,13 +106,20 @@ fun CaptureScreen(
         }
         s.savedDir?.let { Text("Saved to: $it", fontSize = 12.sp, color = Green) }
 
-        // Live video
+        // Live video, or the recorded video while playing back the last capture.
         Box(
             Modifier.fillMaxWidth().height(360.dp).background(Color.Black),
             contentAlignment = Alignment.Center,
         ) {
           val bmp = preview
-          if (bmp != null) {
+          val replayPath = s.replayVideoPath
+          if (replayPath != null) {
+            ReplayVideo(
+                path = replayPath,
+                onStarted = vm::onReplayVideoStarted,
+                onError = vm::onReplayVideoError,
+            )
+          } else if (bmp != null) {
             Image(bmp.asImageBitmap(), "Glasses camera", Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
           } else {
             Text(if (s.capturing) "Waiting for glasses frames..." else "No video", color = Color.White)
@@ -204,6 +213,32 @@ private fun SetupCard(s: UiState, onRegister: () -> Unit, onUnregister: () -> Un
       }
     }
   }
+}
+
+/**
+ * Plays the capture's video.mp4 (video only; it has no audio track). Audio is played separately
+ * on the glasses, started via [onStarted] so the two begin together.
+ */
+@Composable
+private fun ReplayVideo(path: String, onStarted: () -> Unit, onError: (String) -> Unit) {
+  AndroidView(
+      modifier = Modifier.fillMaxSize(),
+      factory = { context ->
+        VideoView(context).apply {
+          setOnPreparedListener { player ->
+            player.setVolume(0f, 0f)
+            start()
+            onStarted()
+          }
+          setOnErrorListener { _, what, extra ->
+            onError("MediaPlayer error $what/$extra")
+            true
+          }
+          setVideoPath(path)
+        }
+      },
+      onRelease = { it.stopPlayback() },
+  )
 }
 
 @Composable

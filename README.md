@@ -52,11 +52,16 @@ The Bluetooth HFP route and the labelled phone-mic fallback are still in the cod
 app. Every `AudioChunk` carries an `AudioOrigin`, so phone audio can never be passed off as glasses
 audio further down the pipeline.
 
-**Listening:** after **Stop**, tap **Play last capture on glasses**. The audio plays through the
-**glasses' speakers** (their Bluetooth media output), and the screen shows "Playing on: <device>",
-which is the device Android actually routed to. If the glasses' output isn't available, or Android
-routes elsewhere, playback stops with a red error; it never falls back to the phone speaker. Up to
-the last 10 minutes are kept **in memory only** and replaced on the next Start.
+**Playback:** after **Stop**, tap **Play last capture**. The recorded **video** (`video.mp4`)
+plays in the preview box on the phone, and the **audio** plays through the **glasses' speakers**
+(their Bluetooth media output). The audio is started with an offset taken from when the first
+video frame and the first audio chunk arrived, so the two line up (to within roughly 0.1 s; not
+frame-accurate). The screen shows "Playing on: <device>", the device Android actually routed the
+audio to. If the glasses' output isn't available, or Android routes elsewhere, playback stops
+with a red error; audio never falls back to the phone speaker. If the capture has no video file
+(see `events.log`), only the audio plays. The audio for playback is kept in memory (last 10
+minutes); the video comes from the capture's folder, so it is gone once an unsaved capture is
+replaced by the next Start.
 
 **Saving (SR2):** while capturing, the app writes the session to a temporary folder. After **Stop**,
 tap **Save** to keep it. Without Save, it is deleted when the next capture starts or the app
@@ -168,7 +173,7 @@ Run each test for about 60 s.
 | 4 | **Separation test** | Phone in a closed drawer or another room (inside Bluetooth range), a speaker playing beside the phone: no rise in glasses audio. Speaking at the glasses: clear rise |
 | 5 | **Tap test** | Lightly tap the glasses frame: sharp spike. Tap the phone body: none |
 | 6 | Partner vs wearer | Partner speaks at 1 m in front, wearer silent, then the wearer speaks. Note both levels, and listen with **Play last capture on glasses**. This shows how well the glasses pick up a *conversation partner* (RQ1) |
-| 7 | **Playback on glasses** | After Stop, tap Play: sound comes from the glasses, and the screen shows "Playing on: BLUETOOTH_A2DP… <glasses name>" (or BLE). Turn off "Media audio" for the glasses in Android Bluetooth settings and tap Play again: red error, **no** sound from the phone speaker |
+| 7 | **Playback** | After Stop, tap Play: the recorded video plays in the preview box and the sound comes from the glasses, roughly in sync (clap in front of the camera to check), and the screen shows "Playing on: BLUETOOTH_A2DP… <glasses name>" (or BLE). Turn off "Media audio" for the glasses in Android Bluetooth settings and tap Play again: red error, **no** sound from the phone speaker |
 | 8 | Simultaneous A/V | Run 5 min. Record whether fps / resolution drops and whether audio gaps exceed 100 ms |
 | 9 | **Save (SR2)** | Capture, Stop, tap **Save**: "Saved to: …" appears. `adb pull` the folder: `video.mp4` plays, `audio.wav` plays, both CSVs have rows, `events.log` ends with a summary line. Repeat 5 times (SR2). Capture again **without** Save, then Start once more: the unsaved folder is gone from `files/pending` (SR9) |
 | 10 | **Clap test** | Capture, clap once in front of the camera and press **Marker**, then Save. Offline, find the clap frame in `video.mp4` / `video_frames.csv` and the audio spike in `audio.wav` / `audio_chunks.csv`; the difference in `arrival_elapsed_ns` is the A/V offset |

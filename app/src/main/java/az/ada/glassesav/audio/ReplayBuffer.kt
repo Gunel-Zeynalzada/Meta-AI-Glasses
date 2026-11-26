@@ -83,15 +83,22 @@ class ReplayBuffer(context: Context) : AudioChunkProcessor {
    * Returns null on success, or an error message (nothing is played on the phone speaker).
    * [onRouted] reports the device Android actually routed to; [onFinished] runs when playback ends.
    * Both run on a background thread.
+   *
+   * [startOffsetMs] lines the audio up with the video: positive = wait that long before playing
+   * (audio started after the video), negative = skip that much audio (audio started first).
    */
   fun play(
       glassesName: String?,
       onRouted: (String) -> Unit,
       onError: (String) -> Unit,
       onFinished: () -> Unit,
+      startOffsetMs: Long = 0,
   ): String? {
     stopPlayback()
-    val pcm = snapshot()
+    val all = snapshot()
+    val skip = if (startOffsetMs < 0) (-startOffsetMs * sampleRate / 1000).toInt().coerceAtMost(all.size) else 0
+    val pcm = if (skip > 0) all.copyOfRange(skip, all.size) else all
+    val delayMs = startOffsetMs.coerceAtLeast(0)
     if (pcm.isEmpty()) return "Nothing to play yet: capture first."
     val target =
         findGlassesOutput(glassesName)
@@ -126,6 +133,13 @@ class ReplayBuffer(context: Context) : AudioChunkProcessor {
         Thread(
                 {
                   try {
+                    // Wait in small steps so Stop still works during the delay.
+                    var waited = 0L
+                    while (waited < delayMs && track === t) {
+                      Thread.sleep(minOf(20L, delayMs - waited))
+                      waited += 20
+                    }
+                    if (track !== t) return@Thread
                     t.play()
                     var pos = 0
                     var routeChecked = false
