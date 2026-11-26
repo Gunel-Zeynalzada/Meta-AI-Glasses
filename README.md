@@ -7,9 +7,9 @@ The app shows **live glasses video** and **live audio** in an Android app. On sc
 **where the audio physically comes from**, along with the evidence for that, and it keeps the
 timestamps that later audiovisual (face/lip) processing will need.
 
-> Status: **compiled successfully** (Gradle `assembleDebug`, SDK 1.1.0). It has **not yet been run
-> on real glasses**. Every audio-source claim below must be confirmed with the hardware checklist
-> in section 5.
+> Status: builds with Gradle `assembleDebug` (SDK 1.1.0) and has been run on a phone with Ray-Ban
+> Meta Gen 2 glasses: live video and glasses audio (DAT SDK stream) work at the same time. Confirm
+> any new audio-source claim on the phone and glasses before relying on it.
 
 ---
 

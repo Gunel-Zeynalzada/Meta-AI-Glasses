@@ -8,3 +8,10 @@
 /captures/
 .externalNativeBuild/
 .cxx/
+
+# Archives, recordings and research data (never commit)
+*.zip
+*.wav
+*.mp4
+research/easycom/data/
+research/recordings/
