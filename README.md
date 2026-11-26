@@ -101,7 +101,7 @@ adb pull /sdcard/Android/data/az.ada.glassesav/files/sessions .
    adb install -r app\build\outputs\apk\debug\app-debug.apk
    ```
 
-### Glasses and Meta AI configuration (you must do this yourselves)
+### Glasses and Meta AI configuration 
 1. Update the Meta AI app to **V292+** and the glasses firmware to **V130+** (Meta AI → glasses →
    General → About → Version). After the v128 update, Meta's known-issues page says to reboot the glasses.
 2. Turn on **Developer Mode**: Meta AI → Settings → App Info → tap the app version **5 times** →
@@ -122,7 +122,7 @@ adb pull /sdcard/Android/data/az.ada.glassesav/files/sessions .
 Lifecycle: capture runs only while the app is visible. Home, screen-off, glasses folded or
 disconnected all stop it cleanly. Errors appear in red and in the event log.
 
-## 4. Main files, and where your future code connects
+## 4. Main files
 
 ```
 app/src/main/java/az/ada/glassesav/
@@ -152,32 +152,6 @@ hub.addAudioProcessor(myAsdAudioBuffer)
 clock for both streams) to align audio and video, and `presentationTimeUs` to check spacing
 within a stream.
 
-### Timing limits (be careful in the thesis)
-* `presentationTimeUs` origins are **undocumented**. The app shows "audio PTS − video PTS": if it
-  stays roughly constant, the two share a clock.
-* Arrival time includes Bluetooth transport, AAC/HEVC decode and buffering. Jitter is visible as
-  "max gap between audio chunks" and in the saved CSVs.
-* Resolution and fps can drop on their own under Bluetooth load. The real size is shown.
-* End-to-end latency (lips move → frame in app) **is not measured by the app**. Use the clap
-  test below and film the glasses and phone screen together with a 240 fps phone camera.
-
-## 5. Hardware test checklist
-
-Run each test for about 60 s.
-
-| # | Test | Expected (pass) |
-|---|---|---|
-| 1 | Start | session STARTED → stream STREAMING; video in preview; about 24 fps; AUDIO SOURCE green |
-| 2 | Format check | measured rate ≈ 16000 Hz (arrival and PTS); bytes/sample ≈ 2.0; "0 active AudioRecord session(s)" |
-| 3 | **Cover test** | Cover the glasses' mic openings with a fingertip and speak: the level drops sharply. Cover the phone's bottom mic instead: no change |
-| 4 | **Separation test** | Phone in a closed drawer or another room (inside Bluetooth range), a speaker playing beside the phone: no rise in glasses audio. Speaking at the glasses: clear rise |
-| 5 | **Tap test** | Lightly tap the glasses frame: sharp spike. Tap the phone body: none |
-| 6 | Partner vs wearer | Partner speaks at 1 m in front, wearer silent, then the wearer speaks. Note both levels, and listen with **Play last capture on glasses**. This shows how well the glasses pick up a *conversation partner* (RQ1) |
-| 7 | **Playback** | After Stop, tap Play: the recorded video plays in the preview box and the sound comes from the glasses, roughly in sync (clap in front of the camera to check), and the screen shows "Playing on: BLUETOOTH_A2DP… <glasses name>" (or BLE). Turn off "Media audio" for the glasses in Android Bluetooth settings and tap Play again: red error, **no** sound from the phone speaker |
-| 8 | Simultaneous A/V | Run 5 min. Record whether fps / resolution drops and whether audio gaps exceed 100 ms |
-| 9 | **Save (SR2)** | Capture, Stop, tap **Save**: "Saved to: …" appears. `adb pull` the folder: `video.mp4` plays, `audio.wav` plays, both CSVs have rows, `events.log` ends with a summary line. Repeat 5 times (SR2). Capture again **without** Save, then Start once more: the unsaved folder is gone from `files/pending` (SR9) |
-| 10 | **Clap test** | Capture, clap once in front of the camera and press **Marker**, then Save. Offline, find the clap frame in `video.mp4` / `video_frames.csv` and the audio spike in `audio.wav` / `audio_chunks.csv`; the difference in `arrival_elapsed_ns` is the A/V offset |
-| 11 | Disconnect | Fold the glasses: stream error HINGE_CLOSED / session STOPPED, red error, app stays usable; Start works again after unfolding |
 
 ### Logcat to collect if something fails
 ```powershell
@@ -190,7 +164,7 @@ Common failures: `Stream error: PERMISSIONS_DENIED` (grant Camera/Microphone in 
 connections), `createSession failed: NOT_REGISTERED` (tap Register), no SDK audio frames (check
 Developer Mode and the Audio Streaming capability, then share the `DAT:STREAM:AudioDecoder` log).
 
-## 6. Sources
+## 5. Sources
 * github.com/meta/meta-wearables-dat-android: `CHANGELOG.md`, `samples/CameraAccess`,
   `plugins/mwdat-android/skills/{audio-streaming,camera-streaming,session-lifecycle}/SKILL.md`
 * wearables.developer.meta.com/docs: getting-started-toolkit, develop/dat/streaming,
