@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Simple glasses-shaped launcher icon (vector, no bitmap assets needed). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <path android:fillColor="#1F3A5F" android:pathData="M0,0h48v48h-48z" />
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3"
+        android:fillColor="#00000000"
+        android:pathData="M6,22 h14 v8 a4,4 0 0 1 -4,4 h-6 a4,4 0 0 1 -4,-4z M28,22 h14 v8 a4,4 0 0 1 -4,4 h-6 a4,4 0 0 1 -4,-4z M20,24 h8" />
+</vector>
